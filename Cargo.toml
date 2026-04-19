@@ -1,0 +1,10 @@
+[package]
+name = "session-sharing-protocol"
+edition = "2024"
+publish = false
+
+[dependencies]
+byte-unit = { version = "5.1.7", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.4", features = ["serde", "v4"] }

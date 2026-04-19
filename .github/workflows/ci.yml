@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+    - name: Setup SSH keys for private crates
+      uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+      with:
+        ssh-private-key: ${{ secrets.WARP_MACHINE_USER_SSH_PRIVATE_KEY }}
+
+    - name: Run cargo fmt
+      run: cargo fmt --check
+
+    - name: Run cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Install cargo nextest
+      uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+      with:
+        tool: nextest
+
+    - name: Run tests
+      run: cargo nextest run --workspace

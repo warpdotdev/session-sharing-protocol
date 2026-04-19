@@ -33,4 +33,4 @@ jobs:
         tool: nextest
 
     - name: Run tests
-      run: cargo nextest run --workspace
+      run: cargo nextest run --workspace --no-tests=warn

@@ -1,0 +1,39 @@
+//! Common types used by both sharer and viewer.
+
+mod agent_prompt;
+mod command_execution;
+mod control_action;
+mod feature_support;
+mod input;
+mod ordered_terminal_events;
+mod participant;
+mod permissions;
+mod presence;
+mod prompt;
+mod roles;
+mod scrollback;
+mod session_params;
+mod team;
+mod telemetry;
+mod ui_state;
+mod user;
+mod write_to_pty;
+
+pub use agent_prompt::*;
+pub use command_execution::*;
+pub use control_action::*;
+pub use feature_support::*;
+pub use input::*;
+pub use ordered_terminal_events::*;
+pub use participant::*;
+pub use permissions::*;
+pub use presence::*;
+pub use prompt::*;
+pub use roles::*;
+pub use scrollback::*;
+pub use session_params::*;
+pub use team::*;
+pub use telemetry::*;
+pub use ui_state::*;
+pub use user::*;
+pub use write_to_pty::*;

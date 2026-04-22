@@ -1,6 +1,8 @@
 [package]
 name = "session-sharing-protocol"
 edition = "2024"
+authors = ["Warp Team <dev@warp.dev>"]
+license = "AGPL-3.0-only"
 publish = false
 
 [dependencies]

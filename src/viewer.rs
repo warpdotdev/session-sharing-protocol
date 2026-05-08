@@ -259,6 +259,10 @@ pub enum DownstreamMessage {
     /// A response to a [`UpstreamMessage::Ping`].
     /// Used to demonstrate that the server is still alive.
     Pong { data: Vec<u8> },
+
+    /// The sharer's environment setup has completed. Viewers use this to
+    /// transition out of the setup-commands UI phase.
+    EnvironmentSetupComplete,
 }
 
 impl DownstreamMessage {

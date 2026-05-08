@@ -579,6 +579,11 @@ pub enum UpstreamMessage {
 
     /// The sharer removed a pending user as a session guest.
     RemovePendingGuest { email: String },
+
+    /// The sharer's environment setup (repo clone, setup commands, MCP
+    /// discovery, skill loading) has completed. Viewers use this to
+    /// transition out of the setup-commands UI phase.
+    EnvironmentSetupComplete,
 }
 
 impl UpstreamMessage {

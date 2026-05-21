@@ -742,6 +742,19 @@ mod session_source_type_tests {
     }
 
     #[test]
+    fn deserialize_new_ambient_agent_with_null_task_id() {
+        // Guards already-persisted Redis SessionManifest rows that were
+        // written before the manual `Serialize` impl collapsed the
+        // None case down to the bare unit-variant form.
+        let v: SessionSourceType =
+            serde_json::from_str(r#"{"AmbientAgent":{"task_id":null}}"#).unwrap();
+        assert!(matches!(
+            v,
+            SessionSourceType::AmbientAgent { task_id: None }
+        ));
+    }
+
+    #[test]
     fn deserialize_new_ambient_agent_without_task_id_field() {
         let v: SessionSourceType = serde_json::from_str(r#"{"AmbientAgent":{}}"#).unwrap();
         assert!(matches!(

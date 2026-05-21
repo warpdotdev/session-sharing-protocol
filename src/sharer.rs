@@ -480,6 +480,10 @@ impl DownstreamMessage {
 }
 
 /// The possible messages sent from client (sharer) to server.
+// `Initialize(InitPayload)` is much larger than the other variants because
+// `InitPayload` carries scrollback and feature-support data. Boxing it would
+// be wire-compatible but churn every call site; suppress the lint instead.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum UpstreamMessage {
     /// The client sends this message to start a shared session.

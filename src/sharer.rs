@@ -154,16 +154,15 @@ pub enum SessionSourceType {
     },
 }
 
-/// Internal helper that mirrors all wire representations of SessionSourceType
-/// (both legacy and new) so we don't recursively call SessionSourceType's
-/// custom Deserialize impl.
+/// Mirrors the legacy unit-variant form and the new struct-variant form so
+/// the custom `Deserialize` impl can accept both shapes.
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum SessionSourceTypeWire {
-    /// Legacy representation: "User" or "AmbientAgent".
+    /// Legacy representation: bare `"User"` or `"AmbientAgent"`.
     Legacy(LegacySessionSourceType),
-    /// New representation: externally tagged AmbientAgent with fields, e.g.
-    /// { "AmbientAgent": { "task_id": "..." } }.
+    /// New representation: externally tagged `AmbientAgent` with fields, e.g.
+    /// `{ "AmbientAgent": { "task_id": "..." } }`.
     New {
         #[serde(rename = "AmbientAgent")]
         ambient_agent: AmbientAgentFields,
@@ -262,6 +261,13 @@ pub struct InitPayload {
     /// The source type for this shared session (i.e. user or ambient agent).
     #[serde(default)]
     pub source_type: SessionSourceType,
+
+    /// Optional orchestrator `task_id` carried alongside `source_type`.
+    /// Set when the sharer wants downstream orchestration discovery to find
+    /// this share's children regardless of variant kind. Sidecar so the
+    /// `User` variant can stay a unit and old viewers ignore it.
+    #[serde(default)]
+    pub source_task_id: Option<String>,
 
     /// Client feature support declaration.
     #[serde(default)]
@@ -474,6 +480,10 @@ impl DownstreamMessage {
 }
 
 /// The possible messages sent from client (sharer) to server.
+// `Initialize(InitPayload)` is much larger than the other variants because
+// `InitPayload` carries scrollback and feature-support data. Boxing it would
+// be wire-compatible but churn every call site; suppress the lint instead.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum UpstreamMessage {
     /// The client sends this message to start a shared session.

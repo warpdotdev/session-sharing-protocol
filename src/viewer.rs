@@ -142,6 +142,13 @@ pub enum DownstreamMessage {
         /// The detailed source type for this shared session.
         #[serde(default)]
         detailed_source_type: SessionSourceType,
+
+        /// Optional orchestrator `task_id` carried alongside the source
+        /// type, mirroring `sharer::InitPayload::source_task_id`. Lets
+        /// viewers find this share's orchestrator task without keying
+        /// off the source-type variant kind.
+        #[serde(default)]
+        source_task_id: Option<String>,
     },
 
     /// The server sends this message when the session was successfully rejoined.

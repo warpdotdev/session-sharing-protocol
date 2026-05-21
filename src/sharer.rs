@@ -24,8 +24,7 @@ use crate::common::{
 
 use super::common::Scrollback;
 use byte_unit::Byte;
-use serde::ser::SerializeStructVariant;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
 /// Possible reasons why the server might gracefully terminate
@@ -143,56 +142,35 @@ pub use crate::common::{
     UpdatePendingUserRoleResponse,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Default)]
 pub enum SessionSourceType {
-    /// The session was started by a user directly. `task_id` is the
-    /// server-side `ai_tasks` row id when known.
-    User { task_id: Option<String> },
+    /// The session was started by a user directly.
+    #[default]
+    User,
     /// The session was started in the course of spinning up an ambient agent.
-    AmbientAgent { task_id: Option<String> },
+    AmbientAgent {
+        #[serde(default)]
+        task_id: Option<String>,
+    },
 }
 
-// `#[derive(Default)]` with `#[default]` on a struct variant is not yet
-// supported on stable Rust, so we implement `Default` manually.
-impl Default for SessionSourceType {
-    fn default() -> Self {
-        SessionSourceType::User { task_id: None }
-    }
-}
-
-impl SessionSourceType {
-    /// Returns the `task_id` carried by this source type, regardless of variant.
-    pub fn orchestrator_task_id(&self) -> Option<&str> {
-        match self {
-            Self::User { task_id } | Self::AmbientAgent { task_id } => task_id.as_deref(),
-        }
-    }
-}
-
-/// Internal helper that mirrors all wire representations of SessionSourceType
-/// (both legacy and new) so we don't recursively call SessionSourceType's
-/// custom Deserialize impl.
+/// Mirrors the legacy unit-variant form and the new struct-variant form so
+/// the custom `Deserialize` impl can accept both shapes.
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum SessionSourceTypeWire {
     /// Legacy representation: bare `"User"` or `"AmbientAgent"`.
     Legacy(LegacySessionSourceType),
-    /// New representation: externally tagged `User` with fields, e.g.
-    /// `{ "User": { "task_id": "..." } }`.
-    NewUser {
-        #[serde(rename = "User")]
-        user: TaskIdFields,
-    },
     /// New representation: externally tagged `AmbientAgent` with fields, e.g.
     /// `{ "AmbientAgent": { "task_id": "..." } }`.
-    NewAmbientAgent {
+    New {
         #[serde(rename = "AmbientAgent")]
-        ambient_agent: TaskIdFields,
+        ambient_agent: AmbientAgentFields,
     },
 }
 
 #[derive(Deserialize)]
-struct TaskIdFields {
+struct AmbientAgentFields {
     #[serde(default)]
     task_id: Option<String>,
 }
@@ -200,17 +178,12 @@ struct TaskIdFields {
 impl From<SessionSourceTypeWire> for SessionSourceType {
     fn from(value: SessionSourceTypeWire) -> Self {
         match value {
-            SessionSourceTypeWire::Legacy(LegacySessionSourceType::User) => {
-                SessionSourceType::User { task_id: None }
-            }
+            SessionSourceTypeWire::Legacy(LegacySessionSourceType::User) => SessionSourceType::User,
             SessionSourceTypeWire::Legacy(LegacySessionSourceType::AmbientAgent) => {
                 SessionSourceType::AmbientAgent { task_id: None }
             }
-            SessionSourceTypeWire::NewUser {
-                user: TaskIdFields { task_id },
-            } => SessionSourceType::User { task_id },
-            SessionSourceTypeWire::NewAmbientAgent {
-                ambient_agent: TaskIdFields { task_id },
+            SessionSourceTypeWire::New {
+                ambient_agent: AmbientAgentFields { task_id },
             } => SessionSourceType::AmbientAgent { task_id },
         }
     }
@@ -226,45 +199,6 @@ impl<'de> Deserialize<'de> for SessionSourceType {
     }
 }
 
-/// Emits the bare legacy form when `task_id` is `None` and the struct form
-/// otherwise, so older readers that only understand the unit-variant shape
-/// stay forward-compatible until they pick up the new deserializer.
-impl Serialize for SessionSourceType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            SessionSourceType::User { task_id: None } => {
-                serializer.serialize_unit_variant("SessionSourceType", 0, "User")
-            }
-            SessionSourceType::User {
-                task_id: Some(task_id),
-            } => {
-                let mut sv =
-                    serializer.serialize_struct_variant("SessionSourceType", 0, "User", 1)?;
-                sv.serialize_field("task_id", task_id)?;
-                sv.end()
-            }
-            SessionSourceType::AmbientAgent { task_id: None } => {
-                serializer.serialize_unit_variant("SessionSourceType", 1, "AmbientAgent")
-            }
-            SessionSourceType::AmbientAgent {
-                task_id: Some(task_id),
-            } => {
-                let mut sv = serializer.serialize_struct_variant(
-                    "SessionSourceType",
-                    1,
-                    "AmbientAgent",
-                    1,
-                )?;
-                sv.serialize_field("task_id", task_id)?;
-                sv.end()
-            }
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub enum LegacySessionSourceType {
     #[default]
@@ -275,7 +209,7 @@ pub enum LegacySessionSourceType {
 impl From<&SessionSourceType> for LegacySessionSourceType {
     fn from(value: &SessionSourceType) -> Self {
         match value {
-            SessionSourceType::User { .. } => LegacySessionSourceType::User,
+            SessionSourceType::User => LegacySessionSourceType::User,
             SessionSourceType::AmbientAgent { .. } => LegacySessionSourceType::AmbientAgent,
         }
     }
@@ -327,6 +261,13 @@ pub struct InitPayload {
     /// The source type for this shared session (i.e. user or ambient agent).
     #[serde(default)]
     pub source_type: SessionSourceType,
+
+    /// Optional orchestrator `task_id` carried alongside `source_type`.
+    /// Set when the sharer wants downstream orchestration discovery to find
+    /// this share's children regardless of variant kind. Sidecar so the
+    /// `User` variant can stay a unit and old viewers ignore it.
+    #[serde(default)]
+    pub source_task_id: Option<String>,
 
     /// Client feature support declaration.
     #[serde(default)]
@@ -669,7 +610,11 @@ impl UpstreamMessage {
 
 #[cfg(test)]
 mod session_source_type_tests {
-    //! Wire-compatibility tests for `SessionSourceType`.
+    //! Wire-compatibility tests for `SessionSourceType` after the
+    //! QUALITY-726 sidecar redesign reverted `User` to a strict unit
+    //! variant. `AmbientAgent` keeps the struct shape it already had
+    //! on `main`; new orchestrator `task_id`s for `User` shares ride
+    //! on the `InitPayload::source_task_id` sidecar instead.
     use super::*;
 
     // --- Deserialization ---
@@ -677,7 +622,7 @@ mod session_source_type_tests {
     #[test]
     fn deserialize_legacy_user_bare() {
         let v: SessionSourceType = serde_json::from_str("\"User\"").unwrap();
-        assert!(matches!(v, SessionSourceType::User { task_id: None }));
+        assert!(matches!(v, SessionSourceType::User));
     }
 
     #[test]
@@ -687,29 +632,6 @@ mod session_source_type_tests {
             v,
             SessionSourceType::AmbientAgent { task_id: None }
         ));
-    }
-
-    #[test]
-    fn deserialize_new_user_with_task_id() {
-        let v: SessionSourceType = serde_json::from_str(r#"{"User":{"task_id":"abc"}}"#).unwrap();
-        match v {
-            SessionSourceType::User {
-                task_id: Some(ref s),
-            } if s == "abc" => {}
-            other => panic!("expected User {{ task_id: Some(\"abc\") }}, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn deserialize_new_user_with_null_task_id() {
-        let v: SessionSourceType = serde_json::from_str(r#"{"User":{"task_id":null}}"#).unwrap();
-        assert!(matches!(v, SessionSourceType::User { task_id: None }));
-    }
-
-    #[test]
-    fn deserialize_new_user_without_task_id_field() {
-        let v: SessionSourceType = serde_json::from_str(r#"{"User":{}}"#).unwrap();
-        assert!(matches!(v, SessionSourceType::User { task_id: None }));
     }
 
     #[test]
@@ -726,7 +648,7 @@ mod session_source_type_tests {
 
     #[test]
     fn deserialize_new_ambient_agent_with_null_task_id() {
-        // Guards Redis rows written before Serialize emitted bare unit-variants.
+        // Guards Redis rows written before Serialize collapsed the None case.
         let v: SessionSourceType =
             serde_json::from_str(r#"{"AmbientAgent":{"task_id":null}}"#).unwrap();
         assert!(matches!(
@@ -747,27 +669,20 @@ mod session_source_type_tests {
     // --- Serialization ---
 
     #[test]
-    fn serialize_user_without_task_id_emits_bare_form() {
-        let v = SessionSourceType::User { task_id: None };
+    fn serialize_user_emits_bare_form() {
+        let v = SessionSourceType::User;
         let json = serde_json::to_string(&v).unwrap();
-        // Legacy bare form so older readers can still parse it.
         assert_eq!(json, "\"User\"");
     }
 
     #[test]
-    fn serialize_user_with_task_id_emits_struct_form() {
-        let v = SessionSourceType::User {
-            task_id: Some("abc".to_string()),
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        assert_eq!(json, r#"{"User":{"task_id":"abc"}}"#);
-    }
-
-    #[test]
-    fn serialize_ambient_agent_without_task_id_emits_bare_form() {
+    fn serialize_ambient_agent_without_task_id_emits_struct_form() {
+        // `AmbientAgent` has been a struct variant since before QUALITY-726,
+        // so the derived Serialize emits the externally tagged form with a
+        // `null` task_id rather than the bare legacy form.
         let v = SessionSourceType::AmbientAgent { task_id: None };
         let json = serde_json::to_string(&v).unwrap();
-        assert_eq!(json, "\"AmbientAgent\"");
+        assert_eq!(json, r#"{"AmbientAgent":{"task_id":null}}"#);
     }
 
     #[test]
@@ -782,18 +697,10 @@ mod session_source_type_tests {
     // --- Roundtrip ---
 
     #[test]
-    fn roundtrip_user_with_task_id() {
-        let v = SessionSourceType::User {
-            task_id: Some("abc".to_string()),
-        };
-        let json = serde_json::to_string(&v).unwrap();
+    fn roundtrip_user() {
+        let json = serde_json::to_string(&SessionSourceType::User).unwrap();
         let parsed: SessionSourceType = serde_json::from_str(&json).unwrap();
-        match parsed {
-            SessionSourceType::User {
-                task_id: Some(ref s),
-            } if s == "abc" => {}
-            other => panic!("roundtrip altered value: {other:?}"),
-        }
+        assert!(matches!(parsed, SessionSourceType::User));
     }
 
     #[test]
@@ -814,46 +721,9 @@ mod session_source_type_tests {
     // --- Helpers ---
 
     #[test]
-    fn orchestrator_task_id_returns_user_task_id() {
-        let v = SessionSourceType::User {
-            task_id: Some("abc".to_string()),
-        };
-        assert_eq!(v.orchestrator_task_id(), Some("abc"));
-    }
-
-    #[test]
-    fn orchestrator_task_id_returns_ambient_agent_task_id() {
-        let v = SessionSourceType::AmbientAgent {
-            task_id: Some("xyz".to_string()),
-        };
-        assert_eq!(v.orchestrator_task_id(), Some("xyz"));
-    }
-
-    #[test]
-    fn orchestrator_task_id_none_when_missing() {
-        assert_eq!(
-            SessionSourceType::User { task_id: None }.orchestrator_task_id(),
-            None
-        );
-        assert_eq!(
-            SessionSourceType::AmbientAgent { task_id: None }.orchestrator_task_id(),
-            None
-        );
-    }
-
-    #[test]
-    fn from_user_maps_to_legacy_user_regardless_of_task_id() {
-        let no_task = SessionSourceType::User { task_id: None };
+    fn from_user_maps_to_legacy_user() {
         assert!(matches!(
-            LegacySessionSourceType::from(&no_task),
-            LegacySessionSourceType::User
-        ));
-
-        let with_task = SessionSourceType::User {
-            task_id: Some("abc".to_string()),
-        };
-        assert!(matches!(
-            LegacySessionSourceType::from(&with_task),
+            LegacySessionSourceType::from(&SessionSourceType::User),
             LegacySessionSourceType::User
         ));
     }
@@ -876,8 +746,60 @@ mod session_source_type_tests {
     }
 
     #[test]
-    fn default_is_user_without_task_id() {
+    fn default_is_user() {
         let v = SessionSourceType::default();
-        assert!(matches!(v, SessionSourceType::User { task_id: None }));
+        assert!(matches!(v, SessionSourceType::User));
+    }
+}
+
+#[cfg(test)]
+mod init_payload_tests {
+    //! Wire-compatibility tests for the `source_task_id` sidecar on
+    //! `InitPayload`. The sidecar is the canonical way to carry an
+    //! orchestrator `task_id` for `SessionSourceType::User` shares,
+    //! since the `User` variant is unit-shaped.
+    use super::*;
+    use crate::common::{ActivePrompt, BlockId, InputReplicaId, Selection, UserID, WindowSize};
+
+    fn make_payload(source_task_id: Option<String>) -> InitPayload {
+        InitPayload {
+            scrollback: Scrollback {
+                blocks: Vec::new(),
+                is_alt_screen_active: false,
+            },
+            active_prompt: ActivePrompt::PS1,
+            window_size: WindowSize {
+                num_rows: 24,
+                num_cols: 80,
+            },
+            user_id: UserID::default(),
+            selection: Selection::None,
+            init_block_id: BlockId::default(),
+            input_replica_id: InputReplicaId::default(),
+            telemetry_context: None,
+            lifetime: Lifetime::default(),
+            universal_developer_input_context: None,
+            source_type: SessionSourceType::User,
+            source_task_id,
+            feature_support: FeatureSupport::default(),
+        }
+    }
+
+    #[test]
+    fn source_task_id_defaults_to_none_when_field_missing() {
+        // Older clients pre-sidecar omit the field entirely; the server
+        // must still accept that payload shape and treat the task id as
+        // absent.
+        let mut value = serde_json::to_value(make_payload(None)).unwrap();
+        value.as_object_mut().unwrap().remove("source_task_id");
+        let parsed: InitPayload = serde_json::from_value(value).unwrap();
+        assert!(parsed.source_task_id.is_none());
+    }
+
+    #[test]
+    fn source_task_id_roundtrips_when_present() {
+        let json = serde_json::to_string(&make_payload(Some("abc".to_string()))).unwrap();
+        let parsed: InitPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.source_task_id.as_deref(), Some("abc"));
     }
 }

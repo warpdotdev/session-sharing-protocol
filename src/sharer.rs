@@ -145,21 +145,15 @@ pub use crate::common::{
 
 #[derive(Clone, Debug)]
 pub enum SessionSourceType {
-    /// The session was started by a user directly.
-    ///
-    /// Carries the conversation's server-side `ai_tasks` row id when known. This
-    /// is independent of whether the conversation acts as an orchestrator —
-    /// orchestration discovery downstream decides whether to render a pill bar
-    /// based on whether the task has children.
+    /// The session was started by a user directly. `task_id` is the
+    /// server-side `ai_tasks` row id when known.
     User { task_id: Option<String> },
     /// The session was started in the course of spinning up an ambient agent.
     AmbientAgent { task_id: Option<String> },
 }
 
 // `#[derive(Default)]` with `#[default]` on a struct variant is not yet
-// supported by stable Rust, so we implement `Default` manually. The default
-// matches the pre-`task_id` behavior: a `User`-sourced share with no
-// associated task id.
+// supported on stable Rust, so we implement `Default` manually.
 impl Default for SessionSourceType {
     fn default() -> Self {
         SessionSourceType::User { task_id: None }
@@ -167,8 +161,7 @@ impl Default for SessionSourceType {
 }
 
 impl SessionSourceType {
-    /// Returns the orchestrator `task_id` carried by this source type,
-    /// regardless of variant. Used to drive orchestration discovery.
+    /// Returns the `task_id` carried by this source type, regardless of variant.
     pub fn orchestrator_task_id(&self) -> Option<&str> {
         match self {
             Self::User { task_id } | Self::AmbientAgent { task_id } => task_id.as_deref(),
@@ -233,12 +226,9 @@ impl<'de> Deserialize<'de> for SessionSourceType {
     }
 }
 
-/// Manual `Serialize` impl that emits the bare legacy form (`"User"` or
-/// `"AmbientAgent"`) when `task_id` is `None`, and the externally-tagged
-/// struct form (`{ "User": { "task_id": "..." } }`) when `task_id` is
-/// `Some(_)`. The bare form keeps older readers — which only know the
-/// legacy unit-variant shape — working until they pick up the new
-/// deserializer.
+/// Emits the bare legacy form when `task_id` is `None` and the struct form
+/// otherwise, so older readers that only understand the unit-variant shape
+/// stay forward-compatible until they pick up the new deserializer.
 impl Serialize for SessionSourceType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -680,13 +670,6 @@ impl UpstreamMessage {
 #[cfg(test)]
 mod session_source_type_tests {
     //! Wire-compatibility tests for `SessionSourceType`.
-    //!
-    //! These guarantee both directions of the migration stay
-    //! backward-compatible: legacy clients writing the bare
-    //! string form continue to be readable, and new clients
-    //! writing the bare form when `task_id` is `None` stay
-    //! readable by older clients that only understand the
-    //! legacy unit-variant shape.
     use super::*;
 
     // --- Deserialization ---
@@ -743,9 +726,7 @@ mod session_source_type_tests {
 
     #[test]
     fn deserialize_new_ambient_agent_with_null_task_id() {
-        // Guards already-persisted Redis SessionManifest rows that were
-        // written before the manual `Serialize` impl collapsed the
-        // None case down to the bare unit-variant form.
+        // Guards Redis rows written before Serialize emitted bare unit-variants.
         let v: SessionSourceType =
             serde_json::from_str(r#"{"AmbientAgent":{"task_id":null}}"#).unwrap();
         assert!(matches!(

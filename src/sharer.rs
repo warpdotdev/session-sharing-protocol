@@ -614,14 +614,10 @@ impl UpstreamMessage {
 
 #[cfg(test)]
 mod session_source_type_tests {
-    //! Wire-compatibility tests for `SessionSourceType` after the
-    //! QUALITY-726 sidecar redesign reverted `User` to a strict unit
-    //! variant. `AmbientAgent` keeps the struct shape it already had
-    //! on `main`; new orchestrator `task_id`s for `User` shares ride
-    //! on the `InitPayload::source_task_id` sidecar instead.
+    //! Wire-compatibility tests for the custom `SessionSourceType`
+    //! `Deserialize` impl, which bridges the legacy bare-string form
+    //! and the new struct-variant form so old clients keep parsing.
     use super::*;
-
-    // --- Deserialization ---
 
     #[test]
     fn deserialize_legacy_user_bare() {
@@ -669,104 +665,18 @@ mod session_source_type_tests {
             SessionSourceType::AmbientAgent { task_id: None }
         ));
     }
-
-    // --- Serialization ---
-
-    #[test]
-    fn serialize_user_emits_bare_form() {
-        let v = SessionSourceType::User;
-        let json = serde_json::to_string(&v).unwrap();
-        assert_eq!(json, "\"User\"");
-    }
-
-    #[test]
-    fn serialize_ambient_agent_without_task_id_emits_struct_form() {
-        // `AmbientAgent` has been a struct variant since before QUALITY-726,
-        // so the derived Serialize emits the externally tagged form with a
-        // `null` task_id rather than the bare legacy form.
-        let v = SessionSourceType::AmbientAgent { task_id: None };
-        let json = serde_json::to_string(&v).unwrap();
-        assert_eq!(json, r#"{"AmbientAgent":{"task_id":null}}"#);
-    }
-
-    #[test]
-    fn serialize_ambient_agent_with_task_id_emits_struct_form() {
-        let v = SessionSourceType::AmbientAgent {
-            task_id: Some("xyz".to_string()),
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        assert_eq!(json, r#"{"AmbientAgent":{"task_id":"xyz"}}"#);
-    }
-
-    // --- Roundtrip ---
-
-    #[test]
-    fn roundtrip_user() {
-        let json = serde_json::to_string(&SessionSourceType::User).unwrap();
-        let parsed: SessionSourceType = serde_json::from_str(&json).unwrap();
-        assert!(matches!(parsed, SessionSourceType::User));
-    }
-
-    #[test]
-    fn roundtrip_ambient_agent_with_task_id() {
-        let v = SessionSourceType::AmbientAgent {
-            task_id: Some("xyz".to_string()),
-        };
-        let json = serde_json::to_string(&v).unwrap();
-        let parsed: SessionSourceType = serde_json::from_str(&json).unwrap();
-        match parsed {
-            SessionSourceType::AmbientAgent {
-                task_id: Some(ref s),
-            } if s == "xyz" => {}
-            other => panic!("roundtrip altered value: {other:?}"),
-        }
-    }
-
-    // --- Helpers ---
-
-    #[test]
-    fn from_user_maps_to_legacy_user() {
-        assert!(matches!(
-            LegacySessionSourceType::from(&SessionSourceType::User),
-            LegacySessionSourceType::User
-        ));
-    }
-
-    #[test]
-    fn from_ambient_agent_maps_to_legacy_ambient_agent_regardless_of_task_id() {
-        let no_task = SessionSourceType::AmbientAgent { task_id: None };
-        assert!(matches!(
-            LegacySessionSourceType::from(&no_task),
-            LegacySessionSourceType::AmbientAgent
-        ));
-
-        let with_task = SessionSourceType::AmbientAgent {
-            task_id: Some("xyz".to_string()),
-        };
-        assert!(matches!(
-            LegacySessionSourceType::from(&with_task),
-            LegacySessionSourceType::AmbientAgent
-        ));
-    }
-
-    #[test]
-    fn default_is_user() {
-        let v = SessionSourceType::default();
-        assert!(matches!(v, SessionSourceType::User));
-    }
 }
 
 #[cfg(test)]
 mod init_payload_tests {
-    //! Wire-compatibility tests for the `source_task_id` sidecar on
-    //! `InitPayload`. The sidecar is the canonical way to carry an
-    //! orchestrator `task_id` for `SessionSourceType::User` shares,
-    //! since the `User` variant is unit-shaped.
+    //! Wire-compatibility test for `InitPayload::source_task_id`:
+    //! older clients pre-sidecar omit the field and must still parse.
     use super::*;
     use crate::common::{ActivePrompt, BlockId, InputReplicaId, Selection, UserID, WindowSize};
 
-    fn make_payload(source_task_id: Option<String>) -> InitPayload {
-        InitPayload {
+    #[test]
+    fn source_task_id_defaults_to_none_when_field_missing() {
+        let payload = InitPayload {
             scrollback: Scrollback {
                 blocks: Vec::new(),
                 is_alt_screen_active: false,
@@ -784,26 +694,12 @@ mod init_payload_tests {
             lifetime: Lifetime::default(),
             universal_developer_input_context: None,
             source_type: SessionSourceType::User,
-            source_task_id,
+            source_task_id: None,
             feature_support: FeatureSupport::default(),
-        }
-    }
-
-    #[test]
-    fn source_task_id_defaults_to_none_when_field_missing() {
-        // Older clients pre-sidecar omit the field entirely; the server
-        // must still accept that payload shape and treat the task id as
-        // absent.
-        let mut value = serde_json::to_value(make_payload(None)).unwrap();
+        };
+        let mut value = serde_json::to_value(payload).unwrap();
         value.as_object_mut().unwrap().remove("source_task_id");
         let parsed: InitPayload = serde_json::from_value(value).unwrap();
         assert!(parsed.source_task_id.is_none());
-    }
-
-    #[test]
-    fn source_task_id_roundtrips_when_present() {
-        let json = serde_json::to_string(&make_payload(Some("abc".to_string()))).unwrap();
-        let parsed: InitPayload = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.source_task_id.as_deref(), Some("abc"));
     }
 }

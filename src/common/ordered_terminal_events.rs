@@ -65,6 +65,11 @@ pub enum OrderedTerminalEventType {
     /// `--skip-initial-turn`). The viewer uses this to tear down the Cloud Mode Setup V2
     /// "Running setup commands…" chip and clear `BlockList::is_executing_oz_environment_startup_commands`
     /// without needing to wait for the first `AppendedExchange`.
+    ///
+    /// There is no matching `AmbientSetupPhaseStarted` variant: setup-phase start is already
+    /// implicit in the existing `SetupCommandState` transitions on the viewer (the default
+    /// `running_group_id` is `Some(initial)` once scrollback arrives), so an explicit start
+    /// marker would be redundant.
     AmbientSetupPhaseEnded,
 }
 

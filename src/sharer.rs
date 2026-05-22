@@ -230,6 +230,15 @@ pub enum Lifetime {
     Lingering,
 }
 
+/// The reasons the sharer may request extended retention for a shared session.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default)]
+pub enum SessionRetentionReason {
+    /// Environment setup failed. The session should remain available so users can inspect setup
+    /// command output from the shared session link after the sandbox shuts down.
+    #[default]
+    SetupFailed,
+}
+
 /// The initial state that the sharer must supply when starting
 /// a shared session.
 #[derive(Debug, Deserialize, Serialize)]
@@ -498,6 +507,13 @@ pub enum UpstreamMessage {
     /// The client sends this message to explicitly end a session
     /// and notify viewers before the websocket closes.
     EndSession { reason: SessionEndedReason },
+
+    /// The client sends this message to request that the server retain session data longer than
+    /// normal after sharing ends.
+    ExtendSessionRetention {
+        #[serde(default)]
+        reason: SessionRetentionReason,
+    },
 
     /// Update to the sharer's active prompt.
     UpdateActivePrompt(ActivePromptUpdate),

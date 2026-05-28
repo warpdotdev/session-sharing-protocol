@@ -61,16 +61,8 @@ pub enum OrderedTerminalEventType {
     /// Marks the end of historical agent conversation replay.
     AgentConversationReplayEnded,
     /// Emitted by the sandboxed Oz AgentDriver when the cloud-mode setup phase is complete but no
-    /// initial LLM turn will follow (e.g. empty-prompt local-to-cloud handoff with
-    /// `--skip-initial-turn`). The viewer uses this to tear down the Cloud Mode Setup V2
-    /// "Running setup commands…" chip and clear `BlockList::is_executing_oz_environment_startup_commands`
-    /// without needing to wait for the first `AppendedExchange`.
-    ///
-    /// There is no matching `AmbientSetupPhaseStarted` variant: setup-phase start is already
-    /// implicit in the existing `SetupCommandState` transitions on the viewer (the default
-    /// `running_group_id` is `Some(initial)` once scrollback arrives), so an explicit start
-    /// marker would be redundant.
-    AmbientSetupPhaseEnded,
+    /// initial LLM turn will follow (e.g. empty-prompt local-to-cloud handoff with `--skip-initial-turn`).
+    CloudModeSetupPhaseEnded,
 }
 
 /// Represents the size of a PTY. Mimics the winsize struct that
@@ -93,7 +85,7 @@ impl std::fmt::Debug for OrderedTerminalEventType {
             Self::AgentResponseEvent { .. } => f.write_str("AgentResponseEvent"),
             Self::AgentConversationReplayStarted => f.write_str("AgentConversationReplayStarted"),
             Self::AgentConversationReplayEnded => f.write_str("AgentConversationReplayEnded"),
-            Self::AmbientSetupPhaseEnded => f.write_str("AmbientSetupPhaseEnded"),
+            Self::CloudModeSetupPhaseEnded => f.write_str("CloudModeSetupPhaseEnded"),
         }
     }
 }
@@ -109,7 +101,7 @@ impl OrderedTerminalEventType {
             | OrderedTerminalEventType::CommandExecutionFinished { .. }
             | OrderedTerminalEventType::AgentConversationReplayStarted
             | OrderedTerminalEventType::AgentConversationReplayEnded
-            | OrderedTerminalEventType::AmbientSetupPhaseEnded
+            | OrderedTerminalEventType::CloudModeSetupPhaseEnded
             | OrderedTerminalEventType::Resize { .. } => Byte::from_u64(0),
         }
     }
@@ -125,33 +117,5 @@ pub struct OrderedTerminalEvent {
 impl OrderedTerminalEvent {
     pub fn num_bytes(&self) -> Byte {
         self.event_type.num_bytes()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ambient_setup_phase_ended_serializes_as_unit_variant() {
-        let event_type = OrderedTerminalEventType::AmbientSetupPhaseEnded;
-        let json = serde_json::to_string(&event_type).expect("serialize");
-        assert_eq!(json, "\"AmbientSetupPhaseEnded\"");
-    }
-
-    #[test]
-    fn ambient_setup_phase_ended_round_trips() {
-        let event = OrderedTerminalEvent {
-            event_no: 42,
-            event_type: OrderedTerminalEventType::AmbientSetupPhaseEnded,
-        };
-        let json = serde_json::to_string(&event).expect("serialize");
-        let parsed: OrderedTerminalEvent = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(parsed.event_no, 42);
-        assert!(matches!(
-            parsed.event_type,
-            OrderedTerminalEventType::AmbientSetupPhaseEnded
-        ));
-        assert_eq!(parsed.num_bytes(), Byte::from_u64(0));
     }
 }

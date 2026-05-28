@@ -60,6 +60,9 @@ pub enum OrderedTerminalEventType {
     AgentConversationReplayStarted,
     /// Marks the end of historical agent conversation replay.
     AgentConversationReplayEnded,
+    /// Emitted by the sandboxed Oz AgentDriver when the cloud-mode setup phase is complete but no
+    /// initial LLM turn will follow (e.g. empty-prompt local-to-cloud handoff with `--skip-initial-turn`).
+    CloudModeSetupPhaseEnded,
 }
 
 /// Represents the size of a PTY. Mimics the winsize struct that
@@ -82,6 +85,7 @@ impl std::fmt::Debug for OrderedTerminalEventType {
             Self::AgentResponseEvent { .. } => f.write_str("AgentResponseEvent"),
             Self::AgentConversationReplayStarted => f.write_str("AgentConversationReplayStarted"),
             Self::AgentConversationReplayEnded => f.write_str("AgentConversationReplayEnded"),
+            Self::CloudModeSetupPhaseEnded => f.write_str("CloudModeSetupPhaseEnded"),
         }
     }
 }
@@ -97,6 +101,7 @@ impl OrderedTerminalEventType {
             | OrderedTerminalEventType::CommandExecutionFinished { .. }
             | OrderedTerminalEventType::AgentConversationReplayStarted
             | OrderedTerminalEventType::AgentConversationReplayEnded
+            | OrderedTerminalEventType::CloudModeSetupPhaseEnded
             | OrderedTerminalEventType::Resize { .. } => Byte::from_u64(0),
         }
     }

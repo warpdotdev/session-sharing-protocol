@@ -134,6 +134,7 @@ pub struct UniversalDeveloperInputContext {
 
     /// How the agent is interacting with the current long running command (if at all).
     /// Deprecated in favor of long_running_command_agent_interaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub long_running_command_agent_interaction_state:
         Option<LongRunningCommandAgentInteractionState>,
 

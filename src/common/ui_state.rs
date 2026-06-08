@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::common::ServerConversationToken;
+use crate::common::{BlockId, ServerConversationToken};
 
 /// The active base model selection for agent mode.
 /// This represents the UI state of which model is selected in the model picker chip.
@@ -112,6 +112,13 @@ pub enum LongRunningCommandAgentInteractionState {
     InControl,
 }
 
+/// How the agent is interacting with a specific long running command block.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LongRunningCommandAgentInteraction {
+    pub block_id: BlockId,
+    pub state: LongRunningCommandAgentInteractionState,
+}
+
 /// The combined state container for universal developer input context.
 /// This includes model selection, input mode, and selected conversation.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, PartialEq, Eq)]
@@ -126,8 +133,13 @@ pub struct UniversalDeveloperInputContext {
     pub selected_conversation: Option<SelectedConversation>,
 
     /// How the agent is interacting with the current long running command (if at all).
+    /// Deprecated in favor of long_running_command_agent_interaction.
     pub long_running_command_agent_interaction_state:
         Option<LongRunningCommandAgentInteractionState>,
+
+    /// How the agent is interacting with a specific long running command block, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub long_running_command_agent_interaction: Option<LongRunningCommandAgentInteraction>,
 
     /// Whether auto-approve is enabled for agent actions.
     pub auto_approve_agent_actions: Option<bool>,
@@ -154,6 +166,10 @@ pub struct UniversalDeveloperInputContextUpdate {
     pub long_running_command_agent_interaction_state:
         Option<LongRunningCommandAgentInteractionState>,
 
+    /// How the agent is interacting with a specific long running command block, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub long_running_command_agent_interaction: Option<LongRunningCommandAgentInteraction>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_approve_agent_actions: Option<bool>,
 
@@ -173,6 +189,7 @@ impl UniversalDeveloperInputContextUpdate {
             auto_approve_agent_actions: updated_auto_approve_agent_actions,
             long_running_command_agent_interaction_state:
                 updated_long_running_command_agent_interaction_state,
+            long_running_command_agent_interaction: updated_long_running_command_agent_interaction,
             cli_agent_session: updated_cli_agent_session,
         } = self;
         let UniversalDeveloperInputContext {
@@ -182,6 +199,7 @@ impl UniversalDeveloperInputContextUpdate {
             auto_approve_agent_actions: cached_auto_approve_agent_actions,
             long_running_command_agent_interaction_state:
                 cached_long_running_command_agent_interaction_state,
+            long_running_command_agent_interaction: cached_long_running_command_agent_interaction,
             cli_agent_session: cached_cli_agent_session,
         } = cached;
 
@@ -198,6 +216,9 @@ impl UniversalDeveloperInputContextUpdate {
             || (updated_long_running_command_agent_interaction_state.is_some()
                 && updated_long_running_command_agent_interaction_state
                     != cached_long_running_command_agent_interaction_state)
+            || (updated_long_running_command_agent_interaction.is_some()
+                && updated_long_running_command_agent_interaction.as_ref()
+                    != cached_long_running_command_agent_interaction.as_ref())
             || (updated_cli_agent_session.is_some()
                 && updated_cli_agent_session.as_ref() != Some(cached_cli_agent_session))
     }
@@ -214,6 +235,7 @@ impl UniversalDeveloperInputContextUpdate {
             auto_approve_agent_actions: updated_auto_approve_agent_actions,
             long_running_command_agent_interaction_state:
                 updated_long_running_command_agent_interaction_state,
+            long_running_command_agent_interaction: updated_long_running_command_agent_interaction,
             cli_agent_session: updated_cli_agent_session,
         } = self;
         let UniversalDeveloperInputContext {
@@ -223,6 +245,7 @@ impl UniversalDeveloperInputContextUpdate {
             auto_approve_agent_actions: current_auto_approve_agent_actions,
             long_running_command_agent_interaction_state:
                 current_long_running_command_agent_interaction_state,
+            long_running_command_agent_interaction: current_long_running_command_agent_interaction,
             cli_agent_session: current_cli_agent_session,
         } = current;
 
@@ -235,6 +258,8 @@ impl UniversalDeveloperInputContextUpdate {
             long_running_command_agent_interaction_state:
                 updated_long_running_command_agent_interaction_state
                     .or(current_long_running_command_agent_interaction_state),
+            long_running_command_agent_interaction: updated_long_running_command_agent_interaction
+                .or(current_long_running_command_agent_interaction),
             cli_agent_session: updated_cli_agent_session.unwrap_or(current_cli_agent_session),
         }
     }
@@ -249,6 +274,7 @@ impl From<UniversalDeveloperInputContext> for UniversalDeveloperInputContextUpda
             auto_approve_agent_actions: context.auto_approve_agent_actions,
             long_running_command_agent_interaction_state: context
                 .long_running_command_agent_interaction_state,
+            long_running_command_agent_interaction: context.long_running_command_agent_interaction,
             cli_agent_session: Some(context.cli_agent_session),
         }
     }

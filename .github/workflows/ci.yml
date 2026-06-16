@@ -28,7 +28,7 @@ jobs:
       run: cargo clippy --all-targets --all-features -- -D warnings
 
     - name: Install cargo nextest
-      uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+      uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.2
       with:
         tool: nextest
 

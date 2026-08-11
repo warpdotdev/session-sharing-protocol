@@ -30,6 +30,30 @@ pub enum AgentPromptFailureReason {
 
     // There is a long running command that is already in progress.
     CommandInProgress,
+
+    /// The sharer is not eligible to bootstrap a `purpose`-tagged prompt (e.g. the retained
+    /// setup-failure debug window has closed). Only ever produced for a request that carried
+    /// a `purpose` (REMOTE-2661).
+    NotEligibleForPurpose,
+}
+
+/// Authorizes a no-`server_conversation_token` [`AgentPromptRequest`] to create or reuse a
+/// conversation for a specific, non-ordinary purpose, instead of being treated as an ordinary
+/// new conversation from a live viewer.
+///
+/// Each variant is a distinct authorization the sharer must independently recognize; a sharer
+/// that does not understand a given purpose must reject the request (via
+/// [`super::super::sharer::UpstreamMessage::RejectAgentPromptRequest`]) rather than silently
+/// starting an ordinary conversation, since a token-less prompt with an unrecognized purpose
+/// may be authorized for reasons an ordinary new conversation is not.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AgentPromptPurpose {
+    /// Authorizes the sharer to create or reuse the debug conversation for a retained
+    /// environment-setup-failure session (REMOTE-2661). The server sets this only after its
+    /// own eligibility check (open debug window, authorized caller) succeeds; the sharer must
+    /// still independently confirm it is still in a retained setup-failure state before acting
+    /// on it.
+    SetupFailureDebug,
 }
 
 /// Represents an AI agent attachment that can be sent with a prompt.
@@ -113,4 +137,21 @@ pub struct AgentPromptRequest {
     /// Optional attachments (blocks, files, etc.) referenced in the prompt.
     #[serde(default)]
     pub attachments: Vec<AgentAttachment>,
+
+    /// Authorizes a `server_conversation_token: None` request to create or reuse a
+    /// conversation for a specific purpose instead of an ordinary new conversation
+    /// (REMOTE-2661). `None` for every ordinary agent prompt request from a live viewer.
+    /// Old sharers ignore this field and treat the request as an ordinary new-conversation
+    /// prompt; only a sharer new enough to recognize the given purpose grants it any special
+    /// authorization.
+    #[serde(default)]
+    pub purpose: Option<AgentPromptPurpose>,
+
+    /// Idempotency key for a `purpose`-tagged request, so a redelivered bootstrap (the
+    /// original acknowledgement was lost) reuses the same conversation and reports the same
+    /// result, rather than starting a second conversation and abandoning the first turn
+    /// (REMOTE-2661). Always `None` when `purpose` is `None`. The sharer is responsible for
+    /// remembering the outcome for a given key for at least as long as the server may retry.
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
 }

@@ -17,9 +17,10 @@ use crate::common::{
     CommandExecutionRequestId, ControlAction, ControlActionFailureReason, ControlActionRequestId,
     FeatureSupport, InputOperationId, InputReplicaId, InputUpdate, InputUpdateFailureReason,
     OrderedTerminalEvent, ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role,
-    RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate, SessionId, SessionSecret,
-    TelemetryContext, UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate, UserID,
-    WindowSize, WriteToPtyFailureReason, WriteToPtyRequestId,
+    RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate, ServerConversationToken,
+    SessionId, SessionSecret, TelemetryContext, UniversalDeveloperInputContext,
+    UniversalDeveloperInputContextUpdate, UserID, WindowSize, WriteToPtyFailureReason,
+    WriteToPtyRequestId,
 };
 
 use super::common::Scrollback;
@@ -579,6 +580,26 @@ pub enum UpstreamMessage {
         id: AgentPromptRequestId,
         participant_id: ParticipantId,
         reason: AgentPromptFailureReason,
+        /// Echoes the originating request's idempotency key when it was a `purpose`-tagged
+        /// bootstrap request (REMOTE-2661), so the server can persist the rejection under the
+        /// same key a caller's retry will look up. `None` for an ordinary rejection.
+        #[serde(default)]
+        idempotency_key: Option<String>,
+    },
+
+    /// Reports the conversation the sharer created or reused for a `purpose`-tagged agent
+    /// prompt request that carried no `server_conversation_token` (REMOTE-2661). Never sent
+    /// for an ordinary agent prompt request (one with `purpose: None`), since the server
+    /// already knows that conversation's token by other means. The server must persist this
+    /// before the request may be treated as delivered: a lost acknowledgement here is what
+    /// would otherwise let a retry start a second, independent conversation.
+    AcknowledgeAgentPromptRequest {
+        id: AgentPromptRequestId,
+        participant_id: ParticipantId,
+        server_conversation_token: ServerConversationToken,
+        /// Echoes the originating request's idempotency key, which the server correlates
+        /// against its own pending wait for this bootstrap's result.
+        idempotency_key: String,
     },
 
     /// The given control action request was denied for the specified `reason`.

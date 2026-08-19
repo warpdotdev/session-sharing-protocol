@@ -654,3 +654,46 @@ impl UpstreamMessage {
         }
     }
 }
+
+// No current code path produces `UpstreamMessage::Unknown`, since its whole purpose is to
+// tolerate a variant that does not exist yet. These pin that wire behavior, which a receiver
+// built against an older revision of this crate depends on.
+#[cfg(test)]
+mod tests {
+    use super::UpstreamMessage;
+
+    #[test]
+    fn unrecognized_variant_decodes_as_unknown() {
+        let decoded = UpstreamMessage::from_json(r#"{"SomeFutureMessage":{"whatever":1}}"#)
+            .expect("an unrecognized variant must not fail the decode");
+        assert!(
+            matches!(decoded, UpstreamMessage::Unknown(_)),
+            "{decoded:?}"
+        );
+    }
+
+    #[test]
+    fn recognized_variant_round_trips_externally_tagged() {
+        let json = r#"{"AcknowledgeAgentPromptRequest":{"id":"r1","participant_id":"p1","server_conversation_token":"6f1a0d9e-0000-4000-8000-000000000000","idempotency_key":"k1"}}"#;
+        let decoded = UpstreamMessage::from_json(json).expect("decode");
+        assert!(
+            matches!(
+                decoded,
+                UpstreamMessage::AcknowledgeAgentPromptRequest { .. }
+            ),
+            "{decoded:?}"
+        );
+        assert_eq!(decoded.to_json().expect("encode"), json);
+    }
+
+    /// The trailing untagged variant makes serde buffer the content of every variant, so cover
+    /// one carrying bytes.
+    #[test]
+    fn recognized_variant_with_bytes_decodes() {
+        let decoded = UpstreamMessage::from_json(r#"{"Ping":{"data":[1,2,3]}}"#).expect("decode");
+        assert!(
+            matches!(decoded, UpstreamMessage::Ping { .. }),
+            "{decoded:?}"
+        );
+    }
+}

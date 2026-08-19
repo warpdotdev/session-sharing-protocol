@@ -580,16 +580,16 @@ pub enum UpstreamMessage {
         id: AgentPromptRequestId,
         participant_id: ParticipantId,
         reason: AgentPromptFailureReason,
-        /// Echoes the originating request's idempotency key when it was a `purpose`-tagged
-        /// bootstrap request (REMOTE-2661), so the server can persist the rejection under the
-        /// same key a caller's retry will look up. `None` for an ordinary rejection.
+        /// Echoes the originating request's idempotency key when it was a bootstrap request
+        /// (REMOTE-2661), so the server can persist the rejection under the same key a
+        /// caller's retry will look up. `None` for an ordinary rejection.
         #[serde(default)]
         idempotency_key: Option<String>,
     },
 
-    /// Reports the conversation the sharer created or reused for a `purpose`-tagged agent
-    /// prompt request that carried no `server_conversation_token` (REMOTE-2661). Never sent
-    /// for an ordinary agent prompt request (one with `purpose: None`), since the server
+    /// Reports the conversation the sharer created or reused for a bootstrap agent prompt
+    /// request — one that carried an `idempotency_key` and no `server_conversation_token`
+    /// (REMOTE-2661). Never sent for an ordinary agent prompt request, since the server
     /// already knows that conversation's token by other means. The server must persist this
     /// before the request may be treated as delivered: a lost acknowledgement here is what
     /// would otherwise let a retry start a second, independent conversation.

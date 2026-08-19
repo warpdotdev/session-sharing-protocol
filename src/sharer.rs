@@ -626,6 +626,12 @@ pub enum UpstreamMessage {
 
     /// The sharer removed a pending user as a session guest.
     RemovePendingGuest { email: String },
+
+    /// A message this build does not recognize, because a newer sharer sent a variant added
+    /// after this build. Deserializing into it lets the receiver ignore the message instead
+    /// of failing the decode. Never constructed to send.
+    #[serde(untagged)]
+    Unknown(serde_json::Value),
 }
 
 impl UpstreamMessage {

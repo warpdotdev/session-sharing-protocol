@@ -117,10 +117,12 @@ pub struct AgentPromptRequest {
     /// Idempotency key for a bootstrap request: set, together with a
     /// `server_conversation_token` of `None`, when the request comes from an authenticated
     /// server-side injection that must create or reuse exactly one conversation (REMOTE-2661).
-    /// A redelivery under the same key reuses that conversation and reports the same result,
-    /// rather than starting a second conversation and abandoning the first turn. `None` for an
-    /// ordinary agent prompt request from a live viewer. The sharer is responsible for
-    /// remembering the outcome for a given key for at least as long as the server may retry.
+    /// `None` for an ordinary agent prompt request from a live viewer.
+    ///
+    /// The key exists so the injector can correlate a retry with its original attempt.
+    /// Deduplication belongs to the session-sharing service, which claims the key before
+    /// injecting, so a retry of a key it has already answered does not reach the sharer. The
+    /// sharer is not required to keep per-key state.
     #[serde(default)]
     pub idempotency_key: Option<String>,
 }

@@ -17,11 +17,12 @@ use crate::{
     common::{
         ActivePrompt, ActivePromptUpdate, AgentAttachment, AgentPromptFailureReason,
         AgentPromptRequest, AgentPromptRequestId, BlockId, BufferId, CommandExecutionFailureReason,
-        CommandExecutionRequestId, ControlAction, ControlActionFailureReason, FeatureSupport,
-        InputOperationId, InputReplicaId, InputUpdate, InputUpdateFailureReason,
-        LinkAccessLevelUpdateResponse, OrderedTerminalEvent, ParticipantId, ParticipantList,
-        ParticipantPresenceUpdate, Role, RoleRequestId, RoleRequestResponse, Scrollback,
-        SelectionUpdate, TeamAccessLevelUpdateResponse, TeamAclData, TelemetryContext,
+        CommandExecutionRequestId, ControlAction, ControlActionFailureReason, ExecutionIdentity,
+        FeatureSupport, InputOperationId, InputReplicaId, InputUpdate, InputUpdateFailureReason,
+        LinkAccessLevelUpdateResponse, NegotiatedSessionContent, OrderedTerminalEvent,
+        ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role, RoleRequestId,
+        RoleRequestResponse, Scrollback, SelectionUpdate, SemanticCursor, SemanticResyncReason,
+        SessionContentMode, TeamAccessLevelUpdateResponse, TeamAclData, TelemetryContext,
         UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate, UserID, WindowSize,
         WriteToPtyFailureReason, WriteToPtyRequestId,
     },
@@ -100,6 +101,22 @@ pub struct InitPayload {
     /// Client feature support declaration.
     #[serde(default)]
     pub feature_support: FeatureSupport,
+
+    /// Requested session content mode. Omitted on the legacy full-terminal wire.
+    #[serde(default, skip_serializing_if = "SessionContentMode::is_full_terminal")]
+    pub content_mode: SessionContentMode,
+
+    /// Required when joining a semantic-only session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_schema_version: Option<u32>,
+
+    /// Exact execution expected by a semantic bootstrap caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_identity: Option<ExecutionIdentity>,
+
+    /// Last contiguous semantic mutation already applied by a rejoining viewer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_cursor: Option<SemanticCursor>,
 }
 
 /// The possible messages sent from server to client (viewer).
@@ -149,12 +166,25 @@ pub enum DownstreamMessage {
         /// off the source-type variant kind.
         #[serde(default)]
         source_task_id: Option<String>,
+
+        /// Present only when the server positively negotiated semantic content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        negotiated_content: Option<NegotiatedSessionContent>,
     },
 
     /// The server sends this message when the session was successfully rejoined.
     RejoinedSuccessfully {
         participant_list: Box<ParticipantList>,
+        /// Present only when the server positively negotiated semantic content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        negotiated_content: Option<NegotiatedSessionContent>,
     },
+
+    /// The semantic session can no longer continue from its current cursor.
+    ///
+    /// Servers must not send this variant to an endpoint that did not positively
+    /// negotiate semantic conversation support.
+    SemanticResyncRequired { reason: SemanticResyncReason },
 
     /// Sent when the viewer fails to join the shared session.
     /// The client should not expect any more messages after this.
@@ -269,6 +299,14 @@ pub enum DownstreamMessage {
 }
 
 impl DownstreamMessage {
+    /// Whether sending this message requires positive semantic negotiation.
+    pub fn requires_semantic_support(&self) -> bool {
+        match self {
+            Self::SemanticResyncRequired { .. } => true,
+            Self::OrderedTerminalEvent(event) => event.requires_semantic_support(),
+            _ => false,
+        }
+    }
     pub fn from_json(json: &str) -> serde_json::Result<Self> {
         serde_json::from_str(json)
     }
@@ -285,9 +323,9 @@ impl DownstreamMessage {
             Self::JoinedSuccessfully {
                 participant_list, ..
             } => participant_list.downgrade_full_roles(),
-            Self::RejoinedSuccessfully { participant_list } => {
-                participant_list.downgrade_full_roles()
-            }
+            Self::RejoinedSuccessfully {
+                participant_list, ..
+            } => participant_list.downgrade_full_roles(),
             Self::ParticipantListUpdated(list) => list.downgrade_full_roles(),
             Self::ParticipantRoleChanged { role, .. } => role.downgrade_full(),
             Self::RoleRequestResponse(RoleRequestResponse::Approved { new_role }) => {
@@ -319,6 +357,11 @@ impl DownstreamMessage {
 }
 
 /// The possible messages sent from client (viewer) to server.
+///
+/// `Initialize` intentionally remains unboxed to preserve the existing public
+/// construction and match API. Serde's JSON wire representation would not
+/// benefit from boxing the payload.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum UpstreamMessage {
     /// The client sends this message to join the shared session.

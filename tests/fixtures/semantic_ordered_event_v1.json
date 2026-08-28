@@ -1,0 +1,22 @@
+{
+  "OrderedTerminalEvent": {
+    "event_no": 0,
+    "event_type": {
+      "SemanticConversationMutation": {
+        "cursor": {
+          "session_id": "00000000-0000-0000-0000-000000000001",
+          "conversation_id": "conversation",
+          "execution_id": "execution",
+          "content_mode": "SemanticConversationOnly",
+          "schema_version": 1,
+          "mutation_sequence": 1
+        },
+        "mutation": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  }
+}

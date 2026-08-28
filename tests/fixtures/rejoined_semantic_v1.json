@@ -1,0 +1,33 @@
+{
+  "RejoinedSuccessfully": {
+    "participant_list": {
+      "sharer": {
+        "info": {
+          "id": "sharer",
+          "profile_data": {
+            "firebase_uid": "uid",
+            "display_name": "Sharer",
+            "photo_url": null,
+            "email": null,
+            "input_replica_id": "replica"
+          },
+          "selection": "None"
+        }
+      },
+      "viewers": [],
+      "present_viewers": [],
+      "absent_viewers": [],
+      "guests": [],
+      "pending_guests": []
+    },
+    "negotiated_content": {
+      "content_mode": "SemanticConversationOnly",
+      "semantic_schema_version": 1,
+      "execution_identity": {
+        "conversation_id": "conversation",
+        "execution_id": "execution",
+        "run_id": "run"
+      }
+    }
+  }
+}

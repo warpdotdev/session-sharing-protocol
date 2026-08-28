@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+fn is_false(value: &bool) -> bool {
+    !*value
+}
 
 /// Client feature support declaration.
 /// Clients include this in their init payloads to declare which protocol features they support.
@@ -14,4 +17,8 @@ pub struct FeatureSupport {
     /// Whether the client supports the "Full" role ACL.
     #[serde(default)]
     pub supports_full_role_for_real: bool,
+    /// Whether the client can negotiate semantic-only sessions and decode
+    /// semantic ordered-event and resync variants.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub supports_semantic_conversation: bool,
 }

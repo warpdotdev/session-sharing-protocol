@@ -15,11 +15,13 @@ use crate::common::{
     ActivePrompt, ActivePromptUpdate, AgentPromptFailureReason, AgentPromptRequest,
     AgentPromptRequestId, BlockId, BufferId, CommandExecutionFailureReason,
     CommandExecutionRequestId, ControlAction, ControlActionFailureReason, ControlActionRequestId,
-    FeatureSupport, InputOperationId, InputReplicaId, InputUpdate, InputUpdateFailureReason,
-    OrderedTerminalEvent, ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role,
-    RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate, SessionId, SessionSecret,
-    TelemetryContext, UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate, UserID,
-    WindowSize, WriteToPtyFailureReason, WriteToPtyRequestId,
+    ExecutionIdentity, FeatureSupport, InputOperationId, InputReplicaId, InputUpdate,
+    InputUpdateFailureReason, NegotiatedSessionContent, OrderedTerminalEvent, ParticipantId,
+    ParticipantList, ParticipantPresenceUpdate, Role, RoleRequestId, RoleRequestResponse,
+    Selection, SelectionUpdate, SemanticCursor, SemanticResyncReason, SessionContentMode,
+    SessionId, SessionSecret, TelemetryContext, UniversalDeveloperInputContext,
+    UniversalDeveloperInputContextUpdate, UserID, WindowSize, WriteToPtyFailureReason,
+    WriteToPtyRequestId,
 };
 
 use super::common::Scrollback;
@@ -39,8 +41,11 @@ pub enum SessionTerminatedReason {
         /// 3. clients should _not_ try to match on the exact message
         details: String,
     },
+
     /// The session exceeded its size limit.
     ExceededSizeLimit,
+    /// Durable semantic session storage was unavailable.
+    StorageUnavailable,
     /// The user does not have any more quota remaining.
     NoUserQuotaRemaining {
         // This is left as an empty struct to make it
@@ -281,6 +286,18 @@ pub struct InitPayload {
     /// Client feature support declaration.
     #[serde(default)]
     pub feature_support: FeatureSupport,
+
+    /// Requested session content mode. Omitted on the legacy full-terminal wire.
+    #[serde(default, skip_serializing_if = "SessionContentMode::is_full_terminal")]
+    pub content_mode: SessionContentMode,
+
+    /// Required when requesting SemanticConversationOnly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_schema_version: Option<u32>,
+
+    /// Required when requesting SemanticConversationOnly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_identity: Option<ExecutionIdentity>,
 }
 
 /// The reconnection token for a shared session.
@@ -347,6 +364,22 @@ pub struct ReconnectPayload {
     /// Client feature support declaration.
     #[serde(default)]
     pub feature_support: FeatureSupport,
+
+    /// Requested session content mode. Omitted on the legacy full-terminal wire.
+    #[serde(default, skip_serializing_if = "SessionContentMode::is_full_terminal")]
+    pub content_mode: SessionContentMode,
+
+    /// Required when reconnecting a semantic-only session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_schema_version: Option<u32>,
+
+    /// Required when reconnecting a semantic-only session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_identity: Option<ExecutionIdentity>,
+
+    /// Last contiguous semantic mutation durably held by the sharer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_cursor: Option<SemanticCursor>,
 }
 
 /// The possible messages sent from server to client (sharer).
@@ -362,6 +395,9 @@ pub enum DownstreamMessage {
         sharer_id: ParticipantId,
         /// The Firebase UID assigned to the sharer.
         sharer_firebase_uid: String,
+        /// Present only when the server positively negotiated semantic content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        negotiated_content: Option<NegotiatedSessionContent>,
     },
 
     /// The server denied the initialization request. No further messages will be processed.
@@ -379,7 +415,16 @@ pub enum DownstreamMessage {
         /// The sharer can use this to update the server with any newer events created while disconnected.
         last_received_event_no: Option<usize>,
         participant_list: ParticipantList,
+        /// Present only when the server positively negotiated semantic content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        negotiated_content: Option<NegotiatedSessionContent>,
     },
+
+    /// The semantic session can no longer continue from its current cursor.
+    ///
+    /// Servers must not send this variant to an endpoint that did not positively
+    /// negotiate semantic conversation support.
+    SemanticResyncRequired { reason: SemanticResyncReason },
 
     /// The server denied the reconnection request. No further messages will be processed.
     FailedToReconnect { reason: ReconnectionFailedReason },
@@ -479,6 +524,10 @@ pub enum DownstreamMessage {
 }
 
 impl DownstreamMessage {
+    /// Whether sending this message requires positive semantic negotiation.
+    pub fn requires_semantic_support(&self) -> bool {
+        matches!(self, Self::SemanticResyncRequired { .. })
+    }
     pub fn from_json(json: &str) -> serde_json::Result<Self> {
         serde_json::from_str(json)
     }

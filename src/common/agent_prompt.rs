@@ -113,4 +113,8 @@ pub struct AgentPromptRequest {
     /// Optional attachments (blocks, files, etc.) referenced in the prompt.
     #[serde(default)]
     pub attachments: Vec<AgentAttachment>,
+
+    /// Canonical AcceptedMessageContext protobuf for semantic-session injection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_message_context: Option<Vec<u8>>,
 }

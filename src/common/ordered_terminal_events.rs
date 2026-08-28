@@ -1,4 +1,4 @@
-use super::{BlockId, ParticipantId};
+use super::{BlockId, ParticipantId, SemanticCursor};
 use byte_unit::Byte;
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +63,14 @@ pub enum OrderedTerminalEventType {
     /// Emitted by the sandboxed Oz AgentDriver when the cloud-mode setup phase is complete but no
     /// initial LLM turn will follow (e.g. empty-prompt local-to-cloud handoff with `--skip-initial-turn`).
     CloudModeSetupPhaseEnded,
+    /// A serialized ConversationMutation protobuf.
+    ///
+    /// Servers must only send this variant to an endpoint that positively
+    /// negotiated SemanticConversationOnly and supports_semantic_conversation.
+    SemanticConversationMutation {
+        cursor: SemanticCursor,
+        mutation: Vec<u8>,
+    },
 }
 
 /// Represents the size of a PTY. Mimics the winsize struct that
@@ -86,16 +94,27 @@ impl std::fmt::Debug for OrderedTerminalEventType {
             Self::AgentConversationReplayStarted => f.write_str("AgentConversationReplayStarted"),
             Self::AgentConversationReplayEnded => f.write_str("AgentConversationReplayEnded"),
             Self::CloudModeSetupPhaseEnded => f.write_str("CloudModeSetupPhaseEnded"),
+            Self::SemanticConversationMutation { .. } => {
+                f.write_str("SemanticConversationMutation")
+            }
         }
     }
 }
 
 impl OrderedTerminalEventType {
+    /// Whether this variant is unknown to legacy peers and therefore requires
+    /// positive semantic negotiation before it is sent.
+    pub fn requires_semantic_support(&self) -> bool {
+        matches!(self, Self::SemanticConversationMutation { .. })
+    }
     pub fn num_bytes(&self) -> Byte {
         match &self {
             OrderedTerminalEventType::PtyBytesRead { bytes } => bytes.len().into(),
             OrderedTerminalEventType::AgentResponseEvent { response_event, .. } => {
                 response_event.len().into()
+            }
+            OrderedTerminalEventType::SemanticConversationMutation { mutation, .. } => {
+                mutation.len().into()
             }
             OrderedTerminalEventType::CommandExecutionStarted { .. }
             | OrderedTerminalEventType::CommandExecutionFinished { .. }
@@ -115,6 +134,9 @@ pub struct OrderedTerminalEvent {
 }
 
 impl OrderedTerminalEvent {
+    pub fn requires_semantic_support(&self) -> bool {
+        self.event_type.requires_semantic_support()
+    }
     pub fn num_bytes(&self) -> Byte {
         self.event_type.num_bytes()
     }

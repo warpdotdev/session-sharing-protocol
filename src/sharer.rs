@@ -281,6 +281,12 @@ pub struct InitPayload {
     /// Client feature support declaration.
     #[serde(default)]
     pub feature_support: FeatureSupport,
+
+    /// Team granted initial viewer access. Does not change session ownership.
+    /// If omitted, the server preserves legacy behavior by selecting the owner's
+    /// default team for initial viewer access.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share_with_team_uid: Option<String>,
 }
 
 /// The reconnection token for a shared session.
@@ -625,5 +631,65 @@ impl UpstreamMessage {
             UpstreamMessage::UpdateInput(input_update) => input_update.num_bytes(),
             _ => Byte::from_u64(0),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::{
+        ActivePrompt, BlockId, InputReplicaId, Scrollback, Selection, UserID, WindowSize,
+    };
+
+    fn sample_init_payload(share_with_team_uid: Option<String>) -> InitPayload {
+        InitPayload {
+            scrollback: Scrollback {
+                blocks: Vec::new(),
+                is_alt_screen_active: false,
+            },
+            active_prompt: ActivePrompt::PS1,
+            window_size: WindowSize {
+                num_rows: 24,
+                num_cols: 80,
+            },
+            user_id: UserID::default(),
+            selection: Selection::None,
+            init_block_id: BlockId::default(),
+            input_replica_id: InputReplicaId::default(),
+            telemetry_context: None,
+            lifetime: Lifetime::Ephemeral,
+            universal_developer_input_context: None,
+            source_type: SessionSourceType::User,
+            source_task_id: None,
+            feature_support: FeatureSupport::default(),
+            share_with_team_uid,
+        }
+    }
+
+    #[test]
+    fn init_payload_deserializes_missing_share_with_team_uid_as_none() {
+        let json = serde_json::to_value(sample_init_payload(None)).unwrap();
+        let mut without_share_with_team_uid = json.as_object().cloned().unwrap();
+        without_share_with_team_uid.remove("share_with_team_uid");
+        let payload: InitPayload =
+            serde_json::from_value(serde_json::Value::Object(without_share_with_team_uid)).unwrap();
+        assert_eq!(payload.share_with_team_uid, None);
+    }
+
+    #[test]
+    fn init_payload_omits_none_share_with_team_uid_and_round_trips_some() {
+        let none_json = serde_json::to_value(sample_init_payload(None)).unwrap();
+        assert!(none_json.get("share_with_team_uid").is_none());
+
+        let share_with_team_uid = "team-uid-123".to_string();
+        let some_json =
+            serde_json::to_value(sample_init_payload(Some(share_with_team_uid.clone()))).unwrap();
+        assert_eq!(some_json["share_with_team_uid"], share_with_team_uid);
+
+        let payload: InitPayload = serde_json::from_value(some_json).unwrap();
+        assert_eq!(
+            payload.share_with_team_uid.as_deref(),
+            Some(share_with_team_uid.as_str())
+        );
     }
 }

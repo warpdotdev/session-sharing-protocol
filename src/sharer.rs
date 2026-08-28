@@ -282,10 +282,10 @@ pub struct InitPayload {
     #[serde(default)]
     pub feature_support: FeatureSupport,
 
-    /// Team the sharer is initiating the session from, when the selected view is team-scoped.
-    /// Absent or omitted for personal/unscoped views.
+    /// Team granted initial viewer access when the selected view is team-scoped.
+    /// Does not change session ownership. Absent or omitted for personal/unscoped views.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_uid: Option<String>,
+    pub share_with_team_uid: Option<String>,
 }
 
 /// The reconnection token for a shared session.
@@ -640,7 +640,7 @@ mod tests {
         ActivePrompt, BlockId, InputReplicaId, Scrollback, Selection, UserID, WindowSize,
     };
 
-    fn sample_init_payload(team_uid: Option<String>) -> InitPayload {
+    fn sample_init_payload(share_with_team_uid: Option<String>) -> InitPayload {
         InitPayload {
             scrollback: Scrollback {
                 blocks: Vec::new(),
@@ -661,30 +661,34 @@ mod tests {
             source_type: SessionSourceType::User,
             source_task_id: None,
             feature_support: FeatureSupport::default(),
-            team_uid,
+            share_with_team_uid,
         }
     }
 
     #[test]
-    fn init_payload_deserializes_missing_team_uid_as_none() {
+    fn init_payload_deserializes_missing_share_with_team_uid_as_none() {
         let json = serde_json::to_value(sample_init_payload(None)).unwrap();
-        let mut without_team_uid = json.as_object().cloned().unwrap();
-        without_team_uid.remove("team_uid");
+        let mut without_share_with_team_uid = json.as_object().cloned().unwrap();
+        without_share_with_team_uid.remove("share_with_team_uid");
         let payload: InitPayload =
-            serde_json::from_value(serde_json::Value::Object(without_team_uid)).unwrap();
-        assert_eq!(payload.team_uid, None);
+            serde_json::from_value(serde_json::Value::Object(without_share_with_team_uid)).unwrap();
+        assert_eq!(payload.share_with_team_uid, None);
     }
 
     #[test]
-    fn init_payload_omits_none_team_uid_and_round_trips_some() {
+    fn init_payload_omits_none_share_with_team_uid_and_round_trips_some() {
         let none_json = serde_json::to_value(sample_init_payload(None)).unwrap();
-        assert!(none_json.get("team_uid").is_none());
+        assert!(none_json.get("share_with_team_uid").is_none());
 
-        let team_uid = "team-uid-123".to_string();
-        let some_json = serde_json::to_value(sample_init_payload(Some(team_uid.clone()))).unwrap();
-        assert_eq!(some_json["team_uid"], team_uid);
+        let share_with_team_uid = "team-uid-123".to_string();
+        let some_json =
+            serde_json::to_value(sample_init_payload(Some(share_with_team_uid.clone()))).unwrap();
+        assert_eq!(some_json["share_with_team_uid"], share_with_team_uid);
 
         let payload: InitPayload = serde_json::from_value(some_json).unwrap();
-        assert_eq!(payload.team_uid.as_deref(), Some(team_uid.as_str()));
+        assert_eq!(
+            payload.share_with_team_uid.as_deref(),
+            Some(share_with_team_uid.as_str())
+        );
     }
 }

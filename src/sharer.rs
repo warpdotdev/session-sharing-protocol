@@ -271,6 +271,11 @@ pub struct InitPayload {
     #[serde(default)]
     pub source_type: SessionSourceType,
 
+    /// The initiating view's team UID. Used as the initial team viewer guest
+    /// when creating the shared session. Absent or empty is treated as unset.
+    #[serde(default)]
+    pub team_uid: Option<String>,
+
     /// Optional orchestrator `task_id` carried alongside `source_type`.
     /// Set when the sharer wants downstream orchestration discovery to find
     /// this share's children regardless of variant kind. Sidecar so the
@@ -625,5 +630,70 @@ impl UpstreamMessage {
             UpstreamMessage::UpdateInput(input_update) => input_update.num_bytes(),
             _ => Byte::from_u64(0),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::{ActivePrompt, Scrollback, Selection, UserID, WindowSize};
+
+    fn init_payload_without_team_uid() -> serde_json::Value {
+        serde_json::json!({
+            "scrollback": { "blocks": [], "is_alt_screen_active": false },
+            "active_prompt": "PS1",
+            "window_size": { "num_rows": 24, "num_cols": 80 },
+            "user_id": { "anonymous_id": "anon", "firebase_id_token": null },
+            "selection": "None",
+            "init_block_id": "block",
+            "input_replica_id": "replica"
+        })
+    }
+
+    #[test]
+    fn init_payload_deserializes_missing_team_uid_as_none() {
+        let payload: InitPayload = serde_json::from_value(init_payload_without_team_uid()).unwrap();
+        assert_eq!(payload.team_uid, None);
+    }
+
+    #[test]
+    fn init_payload_deserializes_specified_team_uid() {
+        let mut json = init_payload_without_team_uid();
+        json["team_uid"] = serde_json::json!("team-uid-abc");
+        let payload: InitPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(payload.team_uid.as_deref(), Some("team-uid-abc"));
+    }
+
+    #[test]
+    fn init_payload_round_trips_team_uid() {
+        let payload = InitPayload {
+            scrollback: Scrollback {
+                blocks: Vec::new(),
+                is_alt_screen_active: false,
+            },
+            active_prompt: ActivePrompt::PS1,
+            window_size: WindowSize {
+                num_rows: 24,
+                num_cols: 80,
+            },
+            user_id: UserID {
+                anonymous_id: "anon".to_string(),
+                access_token: None,
+            },
+            selection: Selection::None,
+            init_block_id: "block".to_string().into(),
+            input_replica_id: "replica".to_string().into(),
+            telemetry_context: None,
+            lifetime: Lifetime::Ephemeral,
+            universal_developer_input_context: None,
+            source_type: SessionSourceType::User,
+            team_uid: Some("team-uid-abc".to_string()),
+            source_task_id: None,
+            feature_support: FeatureSupport::default(),
+        };
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["team_uid"], "team-uid-abc");
+        let decoded: InitPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.team_uid.as_deref(), Some("team-uid-abc"));
     }
 }

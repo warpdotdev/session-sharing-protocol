@@ -282,8 +282,9 @@ pub struct InitPayload {
     #[serde(default)]
     pub feature_support: FeatureSupport,
 
-    /// Team granted initial viewer access when the selected view is team-scoped.
-    /// Does not change session ownership. Absent or omitted for personal/unscoped views.
+    /// Team granted initial viewer access. Does not change session ownership.
+    /// If omitted, the server preserves legacy behavior by selecting the owner's
+    /// default team for initial viewer access.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub share_with_team_uid: Option<String>,
 }

@@ -15,15 +15,17 @@
 
 use crate::{
     common::{
-        ActivePrompt, ActivePromptUpdate, AgentAttachment, AgentPromptFailureReason,
-        AgentPromptRequest, AgentPromptRequestId, BlockId, BufferId, CommandExecutionFailureReason,
-        CommandExecutionRequestId, ControlAction, ControlActionFailureReason, FeatureSupport,
-        InputOperationId, InputReplicaId, InputUpdate, InputUpdateFailureReason,
-        LinkAccessLevelUpdateResponse, OrderedTerminalEvent, ParticipantId, ParticipantList,
-        ParticipantPresenceUpdate, Role, RoleRequestId, RoleRequestResponse, Scrollback,
-        SelectionUpdate, TeamAccessLevelUpdateResponse, TeamAclData, TelemetryContext,
-        UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate, UserID, WindowSize,
-        WriteToPtyFailureReason, WriteToPtyRequestId,
+        ActivePrompt, ActivePromptUpdate, ActiveSessionSnapshotRestore,
+        ActiveSessionSnapshotResumeCursor, ActiveSessionSnapshotResyncReason, AgentAttachment,
+        AgentPromptFailureReason, AgentPromptRequest, AgentPromptRequestId, BlockId, BufferId,
+        CommandExecutionFailureReason, CommandExecutionRequestId, ControlAction,
+        ControlActionFailureReason, FeatureSupport, InputOperationId, InputReplicaId, InputUpdate,
+        InputUpdateFailureReason, LinkAccessLevelUpdateResponse, OrderedTerminalEvent,
+        ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role, RoleRequestId,
+        RoleRequestResponse, Scrollback, SelectionUpdate, TeamAccessLevelUpdateResponse,
+        TeamAclData, TelemetryContext, UniversalDeveloperInputContext,
+        UniversalDeveloperInputContextUpdate, UserID, WindowSize, WriteToPtyFailureReason,
+        WriteToPtyRequestId,
     },
     sharer::{self, LegacySessionSourceType, SessionSourceType},
 };
@@ -100,6 +102,10 @@ pub struct InitPayload {
     /// Client feature support declaration.
     #[serde(default)]
     pub feature_support: FeatureSupport,
+
+    /// Snapshot identity and last contiguous event applied by a reconnecting viewer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_session_snapshot_cursor: Option<ActiveSessionSnapshotResumeCursor>,
 }
 
 /// The possible messages sent from server to client (viewer).
@@ -149,11 +155,18 @@ pub enum DownstreamMessage {
         /// off the source-type variant kind.
         #[serde(default)]
         source_task_id: Option<String>,
+
+        /// Negotiated snapshot bootstrap instructions. Absent for legacy replay.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_session_snapshot_restore: Option<Box<ActiveSessionSnapshotRestore>>,
     },
 
     /// The server sends this message when the session was successfully rejoined.
     RejoinedSuccessfully {
         participant_list: Box<ParticipantList>,
+        /// Negotiated resume or fresh bootstrap instructions.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_session_snapshot_restore: Option<Box<ActiveSessionSnapshotRestore>>,
     },
 
     /// Sent when the viewer fails to join the shared session.
@@ -173,6 +186,11 @@ pub enum DownstreamMessage {
     /// Sent when there is any ordered terminal event.
     /// These messages are only sent _after_ [`DownstreamMessage::JoinedSuccessfully`].
     OrderedTerminalEvent(OrderedTerminalEvent),
+
+    /// The viewer must discard transient restore state and request a fresh bootstrap.
+    ActiveSessionSnapshotResyncRequired {
+        reason: ActiveSessionSnapshotResyncReason,
+    },
 
     /// Sent when the list of participants in the shared session changes.
     ParticipantListUpdated(ParticipantList),
@@ -269,6 +287,18 @@ pub enum DownstreamMessage {
 }
 
 impl DownstreamMessage {
+    pub fn requires_active_session_snapshot_support(&self) -> bool {
+        matches!(
+            self,
+            Self::JoinedSuccessfully {
+                active_session_snapshot_restore: Some(_),
+                ..
+            } | Self::RejoinedSuccessfully {
+                active_session_snapshot_restore: Some(_),
+                ..
+            } | Self::ActiveSessionSnapshotResyncRequired { .. }
+        )
+    }
     pub fn from_json(json: &str) -> serde_json::Result<Self> {
         serde_json::from_str(json)
     }
@@ -285,9 +315,9 @@ impl DownstreamMessage {
             Self::JoinedSuccessfully {
                 participant_list, ..
             } => participant_list.downgrade_full_roles(),
-            Self::RejoinedSuccessfully { participant_list } => {
-                participant_list.downgrade_full_roles()
-            }
+            Self::RejoinedSuccessfully {
+                participant_list, ..
+            } => participant_list.downgrade_full_roles(),
             Self::ParticipantListUpdated(list) => list.downgrade_full_roles(),
             Self::ParticipantRoleChanged { role, .. } => role.downgrade_full(),
             Self::RoleRequestResponse(RoleRequestResponse::Approved { new_role }) => {
@@ -319,6 +349,8 @@ impl DownstreamMessage {
 }
 
 /// The possible messages sent from client (viewer) to server.
+// Boxing `Initialize` would be wire-compatible but would churn every legacy call site.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Serialize, Deserialize)]
 pub enum UpstreamMessage {
     /// The client sends this message to join the shared session.

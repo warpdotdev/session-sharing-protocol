@@ -1,3 +1,4 @@
+use super::ActiveSessionSnapshotCapabilities;
 use serde::{Deserialize, Serialize};
 
 /// Client feature support declaration.
@@ -14,4 +15,7 @@ pub struct FeatureSupport {
     /// Whether the client supports the "Full" role ACL.
     #[serde(default)]
     pub supports_full_role_for_real: bool,
+    /// Active-session snapshot protocol versions this client can use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_session_snapshot: Option<ActiveSessionSnapshotCapabilities>,
 }

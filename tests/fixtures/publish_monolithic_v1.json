@@ -1,0 +1,32 @@
+{
+  "PublishActiveSessionSnapshot": {
+    "receipt": {
+      "receipt": "opaque-prepared-receipt",
+      "descriptor": {
+        "snapshot_id": "snapshot-42",
+        "identity": {
+          "session_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "conversation_id": "conversation",
+          "execution_id": "314159",
+          "run_id": "run"
+        },
+        "snapshot_schema_version": 1,
+        "reducer_version": 1,
+        "through_event_no": 41,
+        "captured_at_unix_ms": 1700000000000,
+        "storage": {
+          "MonolithicV1": {
+            "object": {
+              "object_id": "active-snapshots/snapshot-42",
+              "object_generation": "7",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "compressed_size_bytes": 512,
+              "uncompressed_size_bytes": 1024,
+              "compression_codec": "Zstd"
+            }
+          }
+        }
+      }
+    }
+  }
+}

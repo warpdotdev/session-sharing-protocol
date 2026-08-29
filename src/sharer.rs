@@ -12,14 +12,16 @@
 //! since old clients may not specify new fields expected by the server.
 
 use crate::common::{
-    ActivePrompt, ActivePromptUpdate, AgentPromptFailureReason, AgentPromptRequest,
-    AgentPromptRequestId, BlockId, BufferId, CommandExecutionFailureReason,
-    CommandExecutionRequestId, ControlAction, ControlActionFailureReason, ControlActionRequestId,
-    FeatureSupport, InputOperationId, InputReplicaId, InputUpdate, InputUpdateFailureReason,
-    OrderedTerminalEvent, ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role,
-    RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate, SessionId, SessionSecret,
-    TelemetryContext, UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate, UserID,
-    WindowSize, WriteToPtyFailureReason, WriteToPtyRequestId,
+    ActivePrompt, ActivePromptUpdate, ActiveSessionSnapshotPublicationAck,
+    AgentPromptFailureReason, AgentPromptRequest, AgentPromptRequestId, BlockId, BufferId,
+    CommandExecutionFailureReason, CommandExecutionRequestId, ControlAction,
+    ControlActionFailureReason, ControlActionRequestId, FeatureSupport, InputOperationId,
+    InputReplicaId, InputUpdate, InputUpdateFailureReason, NegotiatedActiveSessionSnapshotProtocol,
+    OrderedTerminalEvent, ParticipantId, ParticipantList, ParticipantPresenceUpdate,
+    PreparedActiveSessionSnapshotReceipt, Role, RoleRequestId, RoleRequestResponse, Selection,
+    SelectionUpdate, SessionId, SessionSecret, TelemetryContext, UniversalDeveloperInputContext,
+    UniversalDeveloperInputContextUpdate, UserID, WindowSize, WriteToPtyFailureReason,
+    WriteToPtyRequestId,
 };
 
 use super::common::Scrollback;
@@ -368,6 +370,9 @@ pub enum DownstreamMessage {
         sharer_id: ParticipantId,
         /// The Firebase UID assigned to the sharer.
         sharer_firebase_uid: String,
+        /// Snapshot protocol selected from the sharer's advertised capabilities.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_session_snapshot_protocol: Option<NegotiatedActiveSessionSnapshotProtocol>,
     },
 
     /// The server denied the initialization request. No further messages will be processed.
@@ -385,6 +390,9 @@ pub enum DownstreamMessage {
         /// The sharer can use this to update the server with any newer events created while disconnected.
         last_received_event_no: Option<usize>,
         participant_list: ParticipantList,
+        /// Snapshot protocol selected from the sharer's advertised capabilities.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_session_snapshot_protocol: Option<NegotiatedActiveSessionSnapshotProtocol>,
     },
 
     /// The server denied the reconnection request. No further messages will be processed.
@@ -393,6 +401,9 @@ pub enum DownstreamMessage {
     /// The server sends this to confirm it has fully processed events up to the latest_processed_event_no,
     /// and the sharer can safely remove them from memory.
     EventsProcessedAck { latest_processed_event_no: usize },
+
+    /// The server acknowledged an out-of-band snapshot publication attempt.
+    ActiveSessionSnapshotPublicationAck(ActiveSessionSnapshotPublicationAck),
 
     /// Sent when the list of participants in the shared session changes.
     ParticipantListUpdated(ParticipantList),
@@ -485,6 +496,18 @@ pub enum DownstreamMessage {
 }
 
 impl DownstreamMessage {
+    pub fn requires_active_session_snapshot_support(&self) -> bool {
+        matches!(
+            self,
+            Self::SessionInitialized {
+                active_session_snapshot_protocol: Some(_),
+                ..
+            } | Self::SessionReconnected {
+                active_session_snapshot_protocol: Some(_),
+                ..
+            } | Self::ActiveSessionSnapshotPublicationAck(_)
+        )
+    }
     pub fn from_json(json: &str) -> serde_json::Result<Self> {
         serde_json::from_str(json)
     }
@@ -529,6 +552,11 @@ pub enum UpstreamMessage {
 
     /// Sent when there is any ordered terminal event.
     OrderedTerminalEvent(OrderedTerminalEvent),
+
+    /// Submits a storage-validated snapshot receipt for publication.
+    PublishActiveSessionSnapshot {
+        receipt: PreparedActiveSessionSnapshotReceipt,
+    },
 
     /// Sent to reconnect to the server after disconnection.
     Reconnect(ReconnectPayload),

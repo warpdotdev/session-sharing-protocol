@@ -1,4 +1,5 @@
 //! Common types used by both sharer and viewer.
+mod active_session_snapshot;
 
 mod agent_prompt;
 mod command_execution;
@@ -19,6 +20,7 @@ mod ui_state;
 mod user;
 mod write_to_pty;
 
+pub use active_session_snapshot::*;
 pub use agent_prompt::*;
 pub use command_execution::*;
 pub use control_action::*;

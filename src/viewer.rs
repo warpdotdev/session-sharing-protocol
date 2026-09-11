@@ -413,8 +413,14 @@ impl UpstreamMessage {
             UpstreamMessage::ExecuteCommand { command, .. } => command.len().into(),
             UpstreamMessage::WriteToPty { bytes, .. } => bytes.len().into(),
             UpstreamMessage::SendAgentPrompt(request) => {
-                // Count prompt length + attachments
+                // Count prompt, inline attachments, and the encoded attribution
+                // exactly as transported, without interpreting the envelope.
                 let prompt_bytes: Byte = request.prompt.len().into();
+                let attribution_bytes: Byte = request
+                    .user_query_attribution_b64
+                    .as_ref()
+                    .map_or(0, String::len)
+                    .into();
                 let attachments_bytes: Byte = request
                     .attachments
                     .iter()
@@ -430,6 +436,7 @@ impl UpstreamMessage {
                     .into();
                 prompt_bytes
                     .add(attachments_bytes)
+                    .and_then(|bytes| bytes.add(attribution_bytes))
                     .unwrap_or(u64::MAX.into())
             }
             _ => Byte::from_u64(0),

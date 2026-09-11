@@ -98,7 +98,7 @@ impl std::str::FromStr for ServerConversationToken {
 }
 
 /// The data for an agent prompt request from a viewer.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AgentPromptRequest {
     /// Unique identifier for this request.
     pub id: AgentPromptRequestId,
@@ -113,4 +113,15 @@ pub struct AgentPromptRequest {
     /// Optional attachments (blocks, files, etc.) referenced in the prompt.
     #[serde(default)]
     pub attachments: Vec<AgentAttachment>,
+
+    /// Standard Base64 of a `warp.multi_agent.v1.UserQueryAttribution` protobuf.
+    /// The relay preserves these unverified query metadata bytes opaquely; they
+    /// must not affect authentication, authorization, or the requester identity.
+    /// Defaulted so requests already persisted in Redis remain readable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_query_attribution_b64: Option<String>,
 }
+
+#[cfg(test)]
+#[path = "agent_prompt_test.rs"]
+mod attribution_tests;
